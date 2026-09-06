@@ -1,0 +1,883 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Nudge4Infection CFIR2.0 Framework</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+    <script src="https://unpkg.com/babel-standalone@6/babel.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f8fafc;
+            color: #1e293b;
+        }
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        ::-webkit-scrollbar-track { background: #f1f5f9; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+
+        @media print {
+            body * { visibility: hidden; }
+            #printable-area, #printable-area * { visibility: visible; }
+            #printable-area {
+                position: absolute; left: 0; top: 0; width: 100%;
+                background: white; padding: 0; margin: 0;
+            }
+            .no-print { display: none !important; }
+        }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useRef, useMemo } = React;
+
+        /* ============ Icons ============ */
+        const Icon = (path, extra) => ({ className = "w-5 h-5" }) => (
+            <svg xmlns="http://www.w3.org/2000/svg" className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">{path}{extra}</svg>
+        );
+        const IconClipboard = Icon(<><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect width="8" height="4" x="8" y="2" rx="1"/></>);
+        const IconSave = Icon(<><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></>);
+        const IconUpload = Icon(<><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" x2="12" y1="3" y2="15"/></>);
+        const IconArrowRight = Icon(<><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></>);
+        const IconArrowLeft = Icon(<><path d="M19 12H5"/><path d="m12 19-7-7 7-7"/></>);
+        const IconPlus = Icon(<><path d="M5 12h14"/><path d="M12 5v14"/></>);
+        const IconX = Icon(<><path d="M18 6 6 18"/><path d="m6 6 12 12"/></>);
+        const IconCheck = Icon(<polyline points="20 6 9 17 4 12"/>);
+        const IconTrash = Icon(<><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></>);
+        const IconPrinter = Icon(<><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect width="12" height="8" x="6" y="14"/></>);
+        const IconInfo = Icon(<><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></>);
+        const IconBack = Icon(<><path d="m9 14-4-4 4-4"/><path d="M5 10h11a4 4 0 0 1 4 4v1"/></>);
+        const IconChevron = Icon(<path d="m9 18 6-6-6-6"/>);
+        const IconBook = Icon(<><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></>);
+        const IconUsers = Icon(<><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></>);
+
+        /* ============ CFIR 2.0 参照データ ============
+           出典: Damschroder LJ, Reardon CM, Opra Widerquist MA, Lowery J.
+           The updated Consolidated Framework for Implementation Research based on user feedback.
+           Implementation Science. 2022;17:75. doi:10.1186/s13012-022-01245-0 */
+        const DOMAINS = [
+            {
+                id: 'innovation', title: 'Innovation', jp: '介入・イノベーション特性', color: 'indigo',
+                desc: 'これから導入・実施しようとしている感染対策そのもの（手技・機器・プロトコル等）の特性。',
+                constructs: [
+                    { id: 'inn_source', name: '提唱元・開発元の信頼性', def: '施策の起案者・推奨元（学会、行政、感染管理室等）が現場から信頼されている' },
+                    { id: 'inn_evidence', name: 'エビデンスの強さ・質', def: '有効性を裏付ける研究・実績が十分にあり、質が高いと認識されている' },
+                    { id: 'inn_advantage', name: '既存のやり方との比較優位性', def: '今までのやり方より明らかに優れている、と現場が感じられる' },
+                    { id: 'inn_adapt', name: '現場に合わせた調整のしやすさ', def: '部署の実情に合わせて手順や運用をカスタマイズできる余地がある' },
+                    { id: 'inn_trial', name: '小規模での試行可能性', def: '本格導入の前に、一部の病棟・期間・対象だけで試すことができる' },
+                    { id: 'inn_complex', name: '手順のシンプルさ・分かりやすさ', def: '手順がシンプルで直感的に理解でき、複雑すぎない' },
+                    { id: 'inn_design', name: '設計・パッケージの質', def: 'マニュアルやツール、掲示物などが分かりやすく整理・設計されている' },
+                    { id: 'inn_cost', name: '導入・運用コストの妥当性', def: '費用や人的コストが現実的な範囲に収まっている' },
+                ]
+            },
+            {
+                id: 'outer', title: 'Outer Setting', jp: '組織外部の状況', color: 'amber',
+                desc: '病院・部署を取り巻く外部環境（地域、行政、関連機関、社会）の状況。',
+                constructs: [
+                    { id: 'out_incident', name: '外部の重大事象による後押し', def: 'アウトブレイクや行政指導、事故等の出来事が、むしろ取り組みを後押ししている' },
+                    { id: 'out_attitude', name: '地域・関連機関の好意的な態度', def: '地域社会や連携機関がこの取り組みに好意的である' },
+                    { id: 'out_conditions', name: '地域の医療・疫学的状況', def: '地域の流行状況や医療事情が実施を後押ししている' },
+                    { id: 'out_partnership', name: '外部機関との連携・ネットワーク', def: '保健所・関連病院・学会等との連携やネットワークがある' },
+                    { id: 'out_policy', name: '法令・行政指針・認証基準の支持', def: '法令、行政指針、第三者評価・認証基準がこの取り組みを支持している' },
+                    { id: 'out_financing', name: '外部財源の確保', def: '診療報酬や補助金など、実施を支える外部からの財源がある' },
+                    { id: 'out_pressure', name: '社会的・外部からの実施圧力', def: '患者・社会・他院からの期待や監視の目が実施を後押ししている' },
+                ]
+            },
+            {
+                id: 'inner', title: 'Inner Setting', jp: '組織内部の状況', color: 'teal',
+                desc: '部署・病院という組織の内部構造、文化、資源、優先順位の状況。',
+                constructs: [
+                    { id: 'inr_structural', name: '組織の規模・構造の適合性', def: '組織の規模や成熟度、物理的な構造が実施に適している' },
+                    { id: 'inr_relational', name: '部署内・多職種間の関係性', def: '部署内および多職種間の人間関係・信頼関係が良好である' },
+                    { id: 'inr_comms', name: '情報共有の仕組み', def: '会議・掲示・電子連絡等、情報共有の仕組みが機能している' },
+                    { id: 'inr_culture', name: '安全文化・改善志向の組織風土', def: '安全文化や継続的改善を重視する組織風土が根付いている' },
+                    { id: 'inr_tension', name: '変化の必要性・危機感の共有', def: '現状を変える必要性・危機感がスタッフ間で共有されている' },
+                    { id: 'inr_compat', name: '既存業務との適合性', def: '既存の業務フローや価値観と矛盾なく適合している' },
+                    { id: 'inr_priority', name: '他業務と比べた優先度', def: '他の業務・プロジェクトと比べて優先度が高いと認識されている' },
+                    { id: 'inr_incentive', name: '評価・インセンティブの仕組み', def: '実施を後押しする評価制度やインセンティブがある' },
+                    { id: 'inr_mission', name: '組織ミッションとの整合性', def: '部署・組織のミッションと明確に合致している' },
+                    { id: 'inr_resources', name: '人員・予算・設備等の資源', def: '人員、予算、設備、研修機会などの資源が十分にある' },
+                    { id: 'inr_access_info', name: '知識・情報へのアクセスのしやすさ', def: '必要な知識・情報にすぐアクセスできる仕組みがある' },
+                ]
+            },
+            {
+                id: 'individuals', title: 'Individuals', jp: '個人の役割と特性', color: 'rose',
+                desc: '施策に関わる人々の役割ごとの支持・関与、および必要性(Need)・能力(Capability)・機会(Opportunity)・動機(Motivation)。',
+                hasTags: true,
+                constructs: [
+                    { id: 'ind_high_leader', name: '経営層・上級管理職の支持', def: '経営層・上級管理職が取り組みを支持し関与している' },
+                    { id: 'ind_mid_leader', name: '中間管理職の支持', def: '師長・医長等の中間管理職が支持し関与している' },
+                    { id: 'ind_opinion_leader', name: 'オピニオンリーダーの支持', def: '現場のオピニオンリーダーが取り組みを支持している' },
+                    { id: 'ind_facilitator', name: 'ファシリテーター役の機能', def: '実施を支援するファシリテーター役が機能している' },
+                    { id: 'ind_impl_lead', name: '実施責任者・推進役の明確さ', def: '実施の責任者・推進役が明確に定まっている' },
+                    { id: 'ind_deliverer', name: '実践者（現場職員）の知識・意欲', def: '実際に行動する職員の知識・スキル・意欲が十分である' },
+                    { id: 'ind_recipient', name: '対象者（患者・利用者）の理解・協力', def: '対象となる患者・利用者本人の理解・協力が得られている' },
+                ]
+            },
+            {
+                id: 'process', title: 'Implementation Process', jp: '実装プロセス', color: 'sky',
+                desc: '施策を計画・実行・評価・改善していく一連のプロセス。',
+                constructs: [
+                    { id: 'prc_teaming', name: 'チーム編成', def: '適切なメンバーで実施チームが編成されている' },
+                    { id: 'prc_needs', name: 'ニーズの把握', def: '対象者（患者・職員）のニーズを事前に把握している' },
+                    { id: 'prc_context', name: '現場の障壁・促進要因の評価', def: '現場の障壁・促進要因を事前に評価している（本アプリの取り組み自体）' },
+                    { id: 'prc_planning', name: '実行計画の策定', def: '具体的な実行計画（誰が何をいつまでに）が策定されている' },
+                    { id: 'prc_tailor', name: '戦略のカスタマイズ', def: '現場の状況に応じて実施戦略をカスタマイズしている' },
+                    { id: 'prc_engage', name: '関係者の巻き込み', def: '実践者・対象者を巻き込む工夫（説明・研修・声かけ等）をしている' },
+                    { id: 'prc_doing', name: '段階的な実施', def: '小規模・段階的に実施し、様子を見ながら拡大している' },
+                    { id: 'prc_reflect', name: '振り返りと評価', def: '実施状況や効果を定期的に振り返り、評価している' },
+                    { id: 'prc_adapt', name: '柔軟な改善・適応', def: '評価結果に基づき、施策ややり方を柔軟に改善している' },
+                ]
+            },
+        ];
+        const ALL_CONSTRUCTS = DOMAINS.flatMap(d => d.constructs.map(c => ({ ...c, domain: d.id })));
+        const COMB_TAGS = ['Need（必要性）', 'Capability（能力）', 'Opportunity（機会）', 'Motivation（動機）'];
+
+        const SCORE_OPTIONS = [
+            { v: -2, label: '強い阻害要因', short: '--', tone: 'bg-red-600 text-white border-red-600' },
+            { v: -1, label: '阻害要因', short: '-', tone: 'bg-red-100 text-red-700 border-red-300' },
+            { v: 0, label: '中立・不明', short: '0', tone: 'bg-slate-100 text-slate-500 border-slate-300' },
+            { v: 1, label: '促進要因', short: '+', tone: 'bg-teal-100 text-teal-700 border-teal-300' },
+            { v: 2, label: '強い促進要因', short: '++', tone: 'bg-teal-600 text-white border-teal-600' },
+        ];
+        const scoreMeta = (v) => SCORE_OPTIONS.find(o => o.v === v);
+
+        const STRATEGY_HINTS = {
+            innovation: ['プロトコル・手順の簡略化と可視化', '小規模パイロット（PDSAサイクル）での試行', '現場スタッフを交えた設計の見直し（テーラリング）'],
+            outer: ['保健所・関連団体・他院との連携強化', '診療報酬上の位置づけ・財源の整理', '地域合同研修や情報交換会の実施'],
+            inner: ['業務フロー・動線の見直し（リストラクチャリング）', '監査とフィードバック（Audit & Feedback）の定例化', '経営層による優先度の明確な発信'],
+            individuals: ['対象者・役割別の教育研修プログラム', 'オピニオンリーダーの巻き込み', '役割別のインセンティブ・評価設計'],
+            process: ['実施チームの再編成・役割の明確化', 'PDSAサイクルの導入', '定期的な振り返りミーティングの設定'],
+        };
+
+        const DEPT_PRESETS = ['ICT/ICN（感染制御チーム）', '病棟（一般）', 'ICU/HCU', '手術室', '外来', '検査部門', 'リハビリテーション部門', '薬剤部', '栄養部門', '清掃・施設管理', '事務部門'];
+        const THEME_PRESETS = ['手指衛生遵守率の向上（5 moments）', '個人防護具(PPE)の適切な着脱・廃棄', '環境清拭・高頻度接触面の消毒徹底', 'カテーテル関連感染対策（早期抜去・管理）', '耐性菌(MDRO)保菌者への接触予防策', '針刺し・切創防止', '血液培養2セット採取・抗菌薬適正使用', 'ワクチン接種の推進'];
+
+        const STORAGE_KEY = 'nudge4infection_cfir2_v1';
+
+        const uid = () => `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+
+        const emptyRatings = () => {
+            const r = {};
+            ALL_CONSTRUCTS.forEach(c => { r[c.id] = { score: null, note: '', tags: [] }; });
+            return r;
+        };
+
+        const newAssessment = (dept, theme) => ({
+            id: uid(), dept, theme, background: '',
+            createdAt: Date.now(), updatedAt: Date.now(),
+            ratings: emptyRatings(), actions: [],
+        });
+
+        /* ============ 小コンポーネント ============ */
+        const Modal = ({ isOpen, onClose, title, children, wide }) => {
+            if (!isOpen) return null;
+            return (
+                <div className="fixed inset-0 bg-slate-900/50 flex items-center justify-center z-50 p-4">
+                    <div className={`bg-white rounded-xl shadow-xl w-full ${wide ? 'max-w-3xl' : 'max-w-2xl'} max-h-[90vh] overflow-y-auto flex flex-col`}>
+                        <div className="flex justify-between items-center p-5 border-b border-slate-100 sticky top-0 bg-white z-10">
+                            <h3 className="text-xl font-bold text-slate-800">{title}</h3>
+                            <button onClick={onClose} className="p-1 text-slate-400 hover:text-slate-600 rounded-lg hover:bg-slate-100 transition-colors">
+                                <IconX />
+                            </button>
+                        </div>
+                        <div className="p-5 flex-1">{children}</div>
+                    </div>
+                </div>
+            );
+        };
+
+        const ScoreSelector = ({ value, onChange }) => (
+            <div className="flex gap-1 flex-wrap">
+                {SCORE_OPTIONS.map(o => (
+                    <button
+                        key={o.v}
+                        onClick={() => onChange(value === o.v ? null : o.v)}
+                        title={o.label}
+                        className={`px-2.5 py-1.5 rounded-lg border text-xs font-bold transition-colors ${value === o.v ? o.tone : 'bg-white text-slate-400 border-slate-200 hover:bg-slate-50'}`}
+                    >
+                        {o.short}
+                    </button>
+                ))}
+            </div>
+        );
+
+        const BadgeChip = ({ label, checked, onChange, colorClass = 'bg-rose-600 border-rose-600' }) => (
+            <label className={`cursor-pointer inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium border transition-colors duration-200
+                ${checked ? `${colorClass} text-white` : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-50'}`}>
+                <input type="checkbox" className="hidden" checked={checked} onChange={(e) => onChange(e.target.checked)} />
+                {label}
+            </label>
+        );
+
+        const DivergingBar = ({ value, max = 2 }) => {
+            const pct = Math.min(100, Math.abs(value) / max * 50);
+            const isNeg = value < 0;
+            return (
+                <div className="relative h-3 w-full bg-slate-100 rounded-full overflow-hidden">
+                    <div className="absolute left-1/2 top-0 bottom-0 w-px bg-slate-300"></div>
+                    <div
+                        className={`absolute top-0 bottom-0 rounded-full ${isNeg ? 'bg-red-500' : value > 0 ? 'bg-teal-500' : ''}`}
+                        style={{ width: `${pct}%`, left: isNeg ? `calc(50% - ${pct}%)` : '50%' }}
+                    ></div>
+                </div>
+            );
+        };
+
+        const domainStats = (assessment, domain) => {
+            const rows = domain.constructs.map(c => ({ ...c, rating: assessment.ratings[c.id] }));
+            const rated = rows.filter(r => r.rating && r.rating.score !== null);
+            const avg = rated.length ? rated.reduce((s, r) => s + r.rating.score, 0) / rated.length : null;
+            const barriers = rated.filter(r => r.rating.score < 0).sort((a, b) => a.rating.score - b.rating.score);
+            const facilitators = rated.filter(r => r.rating.score > 0).sort((a, b) => b.rating.score - a.rating.score);
+            return { rows, rated, avg, barriers, facilitators, total: domain.constructs.length };
+        };
+
+        /* ============ ライブラリ（部署別アセスメント一覧） ============ */
+        const LibraryView = ({ assessments, onOpen, onCreate, onDelete, onImport }) => {
+            const [deptInput, setDeptInput] = useState('');
+            const [themeInput, setThemeInput] = useState('');
+            const fileRef = useRef(null);
+            const list = Object.values(assessments).sort((a, b) => b.updatedAt - a.updatedAt);
+
+            return (
+                <div className="max-w-4xl mx-auto space-y-8">
+                    <div className="bg-white p-8 rounded-2xl shadow-sm border border-slate-100">
+                        <h2 className="text-2xl font-bold text-slate-800 mb-2">新しい分析を開始</h2>
+                        <p className="text-sm text-slate-500 mb-6">部署と対象とする感染対策テーマを入力し、CFIR2.0による分析を開始します。</p>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                            <div>
+                                <label className="block text-sm font-semibold text-slate-700 mb-2">部署名</label>
+                                <input list="dept-presets" value={deptInput} onChange={e => setDeptInput(e.target.value)}
+                                    placeholder="例: 5階病棟、ICU など"
+                                    className="w-full p-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-sky-500 outline-none" />
+                                <datalist id="dept-presets">{DEPT_PRESETS.map(d => <option key={d} value={d} />)}</datalist>
+                            </div>
+                            <div>
+                                <label className="block text-sm font-semibold text-slate-700 mb-2">対象の感染対策テーマ</label>
+                                <input list="theme-presets" value={themeInput} onChange={e => setThemeInput(e.target.value)}
+                                    placeholder="例: 手指衛生遵守率の向上"
+                                    className="w-full p-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-sky-500 outline-none" />
+                                <datalist id="theme-presets">{THEME_PRESETS.map(t => <option key={t} value={t} />)}</datalist>
+                            </div>
+                        </div>
+                        <div className="flex justify-end gap-3">
+                            <button onClick={() => fileRef.current.click()} className="flex items-center gap-2 px-4 py-2.5 border border-slate-300 text-slate-700 rounded-xl hover:bg-slate-50 font-medium transition-colors">
+                                <IconUpload className="w-4 h-4" /> JSON読込
+                            </button>
+                            <input type="file" ref={fileRef} className="hidden" accept=".json" onChange={onImport} />
+                            <button
+                                onClick={() => { if (!deptInput.trim() || !themeInput.trim()) return; onCreate(deptInput.trim(), themeInput.trim()); setDeptInput(''); setThemeInput(''); }}
+                                disabled={!deptInput.trim() || !themeInput.trim()}
+                                className="flex items-center gap-2 bg-sky-700 text-white px-6 py-2.5 rounded-xl font-bold hover:bg-sky-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-md shadow-sky-200"
+                            >
+                                作成して開始 <IconArrowRight className="w-4 h-4" />
+                            </button>
+                        </div>
+                    </div>
+
+                    <div>
+                        <h3 className="text-lg font-bold text-slate-800 mb-3">保存済みの分析（{list.length}件）</h3>
+                        {list.length === 0 ? (
+                            <div className="text-center p-8 text-slate-400 text-sm border-2 border-dashed border-slate-200 rounded-2xl bg-white">
+                                まだ分析がありません。上のフォームから新規作成してください。
+                            </div>
+                        ) : (
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                {list.map(a => {
+                                    const rated = ALL_CONSTRUCTS.filter(c => a.ratings[c.id] && a.ratings[c.id].score !== null).length;
+                                    return (
+                                        <div key={a.id} className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm hover:shadow-md transition-shadow flex flex-col">
+                                            <div className="flex-1">
+                                                <div className="text-xs text-sky-700 bg-sky-50 inline-block px-2 py-0.5 rounded-full font-semibold mb-2">{a.dept}</div>
+                                                <h4 className="font-bold text-slate-800 mb-1 leading-snug">{a.theme}</h4>
+                                                <p className="text-xs text-slate-400 mb-3">更新: {new Date(a.updatedAt).toLocaleString('ja-JP')}</p>
+                                                <div className="w-full bg-slate-100 rounded-full h-1.5 mb-1">
+                                                    <div className="bg-sky-500 h-1.5 rounded-full" style={{ width: `${(rated / ALL_CONSTRUCTS.length) * 100}%` }}></div>
+                                                </div>
+                                                <p className="text-xs text-slate-400">評価進捗 {rated}/{ALL_CONSTRUCTS.length}</p>
+                                            </div>
+                                            <div className="flex justify-between items-center mt-4 pt-3 border-t border-slate-100">
+                                                <button onClick={() => onDelete(a.id)} className="text-rose-500 hover:bg-rose-50 p-2 rounded-lg text-xs font-medium flex items-center gap-1 transition-colors"><IconTrash className="w-4 h-4" /> 削除</button>
+                                                <button onClick={() => onOpen(a.id)} className="bg-slate-800 text-white px-4 py-2 rounded-lg text-sm font-bold hover:bg-slate-900 transition-colors flex items-center gap-1">開く <IconArrowRight className="w-3.5 h-3.5" /></button>
+                                            </div>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        )}
+                    </div>
+                </div>
+            );
+        };
+
+        /* ============ Step1: 設定 ============ */
+        const SetupStep = ({ assessment, update }) => (
+            <div className="max-w-3xl mx-auto space-y-6">
+                <div className="bg-white p-8 rounded-2xl shadow-sm border border-slate-100">
+                    <h2 className="text-2xl font-bold text-slate-800 mb-6 flex items-center gap-2">
+                        <span className="bg-sky-100 text-sky-700 w-8 h-8 rounded-full flex items-center justify-center text-sm">1</span>
+                        部署・対象施策の確認
+                    </h2>
+                    <div className="space-y-5">
+                        <div>
+                            <label className="block text-sm font-semibold text-slate-700 mb-2">部署名</label>
+                            <input value={assessment.dept} onChange={e => update({ dept: e.target.value })}
+                                className="w-full p-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-sky-500 outline-none" />
+                        </div>
+                        <div>
+                            <label className="block text-sm font-semibold text-slate-700 mb-2">対象の感染対策テーマ</label>
+                            <input value={assessment.theme} onChange={e => update({ theme: e.target.value })}
+                                className="w-full p-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-sky-500 outline-none" />
+                        </div>
+                        <div>
+                            <label className="block text-sm font-semibold text-slate-700 mb-2">背景・現状の課題（任意）</label>
+                            <textarea rows="4" value={assessment.background} onChange={e => update({ background: e.target.value })}
+                                placeholder="現状の遵守率や過去の取り組み、問題意識などを自由に記載"
+                                className="w-full p-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-sky-500 outline-none resize-none" />
+                        </div>
+                    </div>
+                </div>
+
+                <div className="bg-indigo-50 border border-indigo-100 rounded-2xl p-6 shadow-sm">
+                    <div className="flex items-start gap-4">
+                        <div className="bg-indigo-100 text-indigo-600 p-2 rounded-full"><IconBook className="w-6 h-6" /></div>
+                        <div>
+                            <h3 className="font-bold text-indigo-900 mb-2 text-lg">CFIR2.0とは</h3>
+                            <p className="text-indigo-900/80 text-sm leading-relaxed">
+                                CFIR（Consolidated Framework for Implementation Research）は、医療などの現場で新しい施策がうまく実装されるかどうかを左右する要因を体系的に整理した実装科学の代表的フレームワークです。
+                                2022年に大幅改訂されたCFIR2.0では、<b>①Innovation（介入特性）②Outer Setting（組織外部）③Inner Setting（組織内部）④Individuals（個人の役割・特性）⑤Implementation Process（実装プロセス）</b>の5領域・約40の構成要素で、現場の障壁（バリア）と促進要因（ファシリテーター）を評価します。
+                                次のステップで各要素を -2（強い阻害要因）〜 +2（強い促進要因）で評価し、分析結果に基づいて実装戦略とアクションプランを検討します。
+                            </p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        );
+
+        /* ============ Step2: 評価 ============ */
+        const AssessStep = ({ assessment, setRating }) => {
+            const [activeDomain, setActiveDomain] = useState(DOMAINS[0].id);
+            const domain = DOMAINS.find(d => d.id === activeDomain);
+            const stats = domainStats(assessment, domain);
+
+            return (
+                <div className="max-w-5xl mx-auto">
+                    <div className="flex flex-wrap gap-2 mb-4">
+                        {DOMAINS.map(d => {
+                            const s = domainStats(assessment, d);
+                            const active = d.id === activeDomain;
+                            return (
+                                <button key={d.id} onClick={() => setActiveDomain(d.id)}
+                                    className={`px-4 py-2.5 rounded-xl text-sm font-bold border transition-colors flex flex-col items-start gap-0.5 ${active ? `bg-${d.color}-600 text-white border-${d.color}-600` : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'}`}>
+                                    <span>{d.jp}</span>
+                                    <span className={`text-[11px] font-normal ${active ? 'text-white/80' : 'text-slate-400'}`}>{s.rated.length}/{s.total} 評価済み</span>
+                                </button>
+                            );
+                        })}
+                    </div>
+
+                    <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 mb-4">
+                        <h3 className={`font-bold text-${domain.color}-800 text-lg`}>{domain.title}（{domain.jp}）</h3>
+                        <p className="text-sm text-slate-500 mt-1">{domain.desc}</p>
+                    </div>
+
+                    <div className="space-y-3">
+                        {domain.constructs.map(c => {
+                            const rating = assessment.ratings[c.id] || { score: null, note: '', tags: [] };
+                            const meta = scoreMeta(rating.score);
+                            return (
+                                <div key={c.id} className="bg-white rounded-xl border border-slate-100 shadow-sm p-4">
+                                    <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
+                                        <div className="flex-1">
+                                            <p className="font-semibold text-slate-800 text-sm">{c.name}</p>
+                                            <p className="text-xs text-slate-500 mt-0.5">{c.def}</p>
+                                        </div>
+                                        <ScoreSelector value={rating.score} onChange={(v) => setRating(c.id, { score: v })} />
+                                    </div>
+                                    {domain.hasTags && (
+                                        <div className="flex flex-wrap gap-1.5 mt-3">
+                                            {COMB_TAGS.map(t => (
+                                                <BadgeChip key={t} label={t} checked={rating.tags.includes(t)}
+                                                    colorClass={`bg-${domain.color}-600 border-${domain.color}-600`}
+                                                    onChange={(checked) => setRating(c.id, { tags: checked ? [...rating.tags, t] : rating.tags.filter(x => x !== t) })} />
+                                            ))}
+                                        </div>
+                                    )}
+                                    <input
+                                        value={rating.note}
+                                        onChange={e => setRating(c.id, { note: e.target.value })}
+                                        placeholder="根拠・具体例・補足メモ（任意）"
+                                        className="w-full mt-3 p-2 text-sm border border-slate-200 rounded-lg focus:ring-2 focus:ring-sky-500 outline-none bg-slate-50"
+                                    />
+                                </div>
+                            );
+                        })}
+                    </div>
+                </div>
+            );
+        };
+
+        /* ============ Step3: 分析結果 ============ */
+        const ResultStep = ({ assessment }) => {
+            const domainData = DOMAINS.map(d => ({ domain: d, stats: domainStats(assessment, d) }));
+            const allRated = ALL_CONSTRUCTS
+                .map(c => ({ ...c, rating: assessment.ratings[c.id] }))
+                .filter(c => c.rating && c.rating.score !== null);
+            const topBarriers = [...allRated].filter(c => c.rating.score < 0).sort((a, b) => a.rating.score - b.rating.score).slice(0, 5);
+            const topFacilitators = [...allRated].filter(c => c.rating.score > 0).sort((a, b) => b.rating.score - a.rating.score).slice(0, 5);
+
+            return (
+                <div className="max-w-5xl mx-auto space-y-6">
+                    <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
+                        <h3 className="font-bold text-slate-800 mb-4">領域別スコア（-2:強い阻害要因 〜 +2:強い促進要因の平均）</h3>
+                        <div className="space-y-4">
+                            {domainData.map(({ domain, stats }) => (
+                                <div key={domain.id}>
+                                    <div className="flex justify-between text-sm mb-1">
+                                        <span className={`font-semibold text-${domain.color}-800`}>{domain.jp}</span>
+                                        <span className="text-slate-500">{stats.avg === null ? '未評価' : stats.avg.toFixed(2)}（{stats.rated.length}/{stats.total}）</span>
+                                    </div>
+                                    <DivergingBar value={stats.avg || 0} />
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
+                            <h3 className="font-bold text-red-700 mb-3">主な阻害要因 TOP5</h3>
+                            {topBarriers.length === 0 ? <p className="text-sm text-slate-400">該当なし（阻害要因は検出されていません）</p> : (
+                                <ul className="space-y-2">
+                                    {topBarriers.map(c => (
+                                        <li key={c.id} className="text-sm border-l-4 border-red-400 pl-3 py-1">
+                                            <span className="font-semibold text-slate-800">{c.name}</span>
+                                            <span className="text-xs text-slate-400 ml-2">{scoreMeta(c.rating.score).label}</span>
+                                            {c.rating.note && <p className="text-xs text-slate-500 mt-0.5">{c.rating.note}</p>}
+                                        </li>
+                                    ))}
+                                </ul>
+                            )}
+                        </div>
+                        <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
+                            <h3 className="font-bold text-teal-700 mb-3">主な促進要因 TOP5</h3>
+                            {topFacilitators.length === 0 ? <p className="text-sm text-slate-400">該当なし（促進要因は検出されていません）</p> : (
+                                <ul className="space-y-2">
+                                    {topFacilitators.map(c => (
+                                        <li key={c.id} className="text-sm border-l-4 border-teal-400 pl-3 py-1">
+                                            <span className="font-semibold text-slate-800">{c.name}</span>
+                                            <span className="text-xs text-slate-400 ml-2">{scoreMeta(c.rating.score).label}</span>
+                                            {c.rating.note && <p className="text-xs text-slate-500 mt-0.5">{c.rating.note}</p>}
+                                        </li>
+                                    ))}
+                                </ul>
+                            )}
+                        </div>
+                    </div>
+
+                    <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
+                        <h3 className="font-bold text-slate-800 mb-4">領域別 実装戦略のヒント</h3>
+                        <p className="text-xs text-slate-500 mb-4">Waltz et al. (2019)のCFIR-ERICマッチングツールの考え方を参考にした一般的な戦略カテゴリの例です。実際の戦略選定は、抽出された個別の阻害要因の内容を踏まえてチームで検討してください。</p>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            {domainData.filter(d => d.stats.avg !== null && d.stats.avg < 0.3).map(({ domain }) => (
+                                <div key={domain.id} className={`p-4 rounded-xl border border-${domain.color}-100 bg-${domain.color}-50/50`}>
+                                    <p className={`font-semibold text-${domain.color}-800 text-sm mb-2`}>{domain.jp}</p>
+                                    <ul className="text-xs text-slate-600 list-disc list-inside space-y-1">
+                                        {STRATEGY_HINTS[domain.id].map((s, i) => <li key={i}>{s}</li>)}
+                                    </ul>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        /* ============ Step4: アクションプラン ============ */
+        const ActionStep = ({ assessment, addAction, updateAction, deleteAction }) => {
+            const [editing, setEditing] = useState(null);
+            const flagged = ALL_CONSTRUCTS.filter(c => {
+                const r = assessment.ratings[c.id];
+                return r && r.score !== null && r.score < 0;
+            });
+
+            return (
+                <div className="max-w-5xl mx-auto space-y-6">
+                    <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 flex justify-between items-center">
+                        <div>
+                            <h3 className="font-bold text-slate-800">アクションプラン</h3>
+                            <p className="text-xs text-slate-500 mt-1">抽出された阻害要因（{flagged.length}件）に対する具体的な対応策を記録します。</p>
+                        </div>
+                        <button onClick={() => setEditing({ id: null, constructId: flagged[0]?.id || '', action: '', owner: '', due: '', status: '未着手' })}
+                            className="flex items-center gap-2 bg-sky-700 text-white px-4 py-2 rounded-lg font-bold hover:bg-sky-800 transition-colors text-sm">
+                            <IconPlus className="w-4 h-4" /> アクション追加
+                        </button>
+                    </div>
+
+                    <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-x-auto">
+                        <table className="w-full text-sm">
+                            <thead className="bg-slate-50 text-slate-500 text-xs uppercase">
+                                <tr>
+                                    <th className="text-left p-3">対象要素</th>
+                                    <th className="text-left p-3">対応策</th>
+                                    <th className="text-left p-3">担当者</th>
+                                    <th className="text-left p-3">期限</th>
+                                    <th className="text-left p-3">状況</th>
+                                    <th className="p-3"></th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {assessment.actions.length === 0 ? (
+                                    <tr><td colSpan="6" className="text-center p-6 text-slate-400">まだアクションがありません</td></tr>
+                                ) : assessment.actions.map(a => {
+                                    const c = ALL_CONSTRUCTS.find(x => x.id === a.constructId);
+                                    return (
+                                        <tr key={a.id} className="border-t border-slate-100">
+                                            <td className="p-3 text-slate-700">{c ? c.name : '（削除された要素）'}</td>
+                                            <td className="p-3 text-slate-700">{a.action}</td>
+                                            <td className="p-3 text-slate-500">{a.owner}</td>
+                                            <td className="p-3 text-slate-500">{a.due}</td>
+                                            <td className="p-3">
+                                                <select value={a.status} onChange={e => updateAction(a.id, { status: e.target.value })}
+                                                    className={`text-xs font-semibold px-2 py-1 rounded-full border-none outline-none ${a.status === '完了' ? 'bg-teal-100 text-teal-700' : a.status === '進行中' ? 'bg-amber-100 text-amber-700' : 'bg-slate-100 text-slate-600'}`}>
+                                                    <option>未着手</option><option>進行中</option><option>完了</option>
+                                                </select>
+                                            </td>
+                                            <td className="p-3 flex gap-1 no-print">
+                                                <button onClick={() => setEditing(a)} className="p-1.5 text-slate-400 hover:text-sky-600 hover:bg-sky-50 rounded"><IconChevron className="w-4 h-4 rotate-90" /></button>
+                                                <button onClick={() => deleteAction(a.id)} className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded"><IconTrash className="w-4 h-4" /></button>
+                                            </td>
+                                        </tr>
+                                    );
+                                })}
+                            </tbody>
+                        </table>
+                    </div>
+
+                    {editing && (
+                        <Modal isOpen={true} onClose={() => setEditing(null)} title={editing.id ? 'アクションを編集' : 'アクションを追加'}>
+                            <div className="space-y-4">
+                                <div>
+                                    <label className="block text-sm font-semibold text-slate-700 mb-1">対象のCFIR構成要素</label>
+                                    <select value={editing.constructId} onChange={e => setEditing({ ...editing, constructId: e.target.value })}
+                                        className="w-full p-2.5 border border-slate-300 rounded-lg">
+                                        <option value="">（自由記述として登録）</option>
+                                        {DOMAINS.map(d => (
+                                            <optgroup label={d.jp} key={d.id}>
+                                                {d.constructs.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                                            </optgroup>
+                                        ))}
+                                    </select>
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-semibold text-slate-700 mb-1">対応策</label>
+                                    <textarea rows="3" value={editing.action} onChange={e => setEditing({ ...editing, action: e.target.value })}
+                                        className="w-full p-2.5 border border-slate-300 rounded-lg resize-none" />
+                                </div>
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div>
+                                        <label className="block text-sm font-semibold text-slate-700 mb-1">担当者</label>
+                                        <input value={editing.owner} onChange={e => setEditing({ ...editing, owner: e.target.value })} className="w-full p-2.5 border border-slate-300 rounded-lg" />
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-semibold text-slate-700 mb-1">期限</label>
+                                        <input type="date" value={editing.due} onChange={e => setEditing({ ...editing, due: e.target.value })} className="w-full p-2.5 border border-slate-300 rounded-lg" />
+                                    </div>
+                                </div>
+                                <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
+                                    <button onClick={() => setEditing(null)} className="px-4 py-2 border border-slate-300 text-slate-700 rounded-lg hover:bg-slate-50">キャンセル</button>
+                                    <button
+                                        onClick={() => { editing.id ? updateAction(editing.id, editing) : addAction(editing); setEditing(null); }}
+                                        disabled={!editing.action.trim()}
+                                        className="px-4 py-2 bg-sky-700 text-white rounded-lg font-bold hover:bg-sky-800 disabled:opacity-50">保存する</button>
+                                </div>
+                            </div>
+                        </Modal>
+                    )}
+
+                    <ReportSection assessment={assessment} />
+                </div>
+            );
+        };
+
+        /* ============ 印刷用レポート ============ */
+        const ReportSection = ({ assessment }) => {
+            const domainData = DOMAINS.map(d => ({ domain: d, stats: domainStats(assessment, d) }));
+            return (
+                <div id="printable-area" className="bg-white p-8 rounded-2xl shadow-sm border border-slate-100">
+                    <div className="flex justify-between items-start mb-6 pb-4 border-b-2 border-slate-800">
+                        <div>
+                            <h1 className="text-2xl font-bold text-slate-900">CFIR2.0 実装分析レポート</h1>
+                            <p className="text-sm text-slate-500 mt-1">部署: {assessment.dept} ｜ テーマ: {assessment.theme}</p>
+                        </div>
+                        <p className="text-xs text-slate-400">出力日: {new Date().toLocaleDateString('ja-JP')}</p>
+                    </div>
+
+                    {assessment.background && (
+                        <div className="mb-6">
+                            <h3 className="font-bold text-slate-800 mb-1 text-sm">背景・現状の課題</h3>
+                            <p className="text-sm text-slate-600 whitespace-pre-wrap">{assessment.background}</p>
+                        </div>
+                    )}
+
+                    <h3 className="font-bold text-slate-800 mb-2 text-sm">領域別評価サマリー</h3>
+                    <table className="w-full text-xs mb-6 border-collapse">
+                        <thead><tr className="bg-slate-100"><th className="text-left p-2 border">領域</th><th className="text-left p-2 border">平均スコア</th><th className="text-left p-2 border">評価済み</th></tr></thead>
+                        <tbody>
+                            {domainData.map(({ domain, stats }) => (
+                                <tr key={domain.id}><td className="p-2 border">{domain.jp}</td><td className="p-2 border">{stats.avg === null ? '-' : stats.avg.toFixed(2)}</td><td className="p-2 border">{stats.rated.length}/{stats.total}</td></tr>
+                            ))}
+                        </tbody>
+                    </table>
+
+                    <h3 className="font-bold text-slate-800 mb-2 text-sm">構成要素別 詳細</h3>
+                    {domainData.map(({ domain, stats }) => (
+                        <div key={domain.id} className="mb-4">
+                            <p className="font-semibold text-slate-700 text-xs mb-1">{domain.jp}</p>
+                            <table className="w-full text-xs border-collapse mb-2">
+                                <tbody>
+                                    {stats.rows.map(r => (
+                                        <tr key={r.id} className="border-b border-slate-100">
+                                            <td className="p-1.5 w-1/3 text-slate-600">{r.name}</td>
+                                            <td className="p-1.5 w-1/6 font-semibold">{r.rating && r.rating.score !== null ? scoreMeta(r.rating.score).label : '未評価'}</td>
+                                            <td className="p-1.5 text-slate-500">{r.rating ? r.rating.note : ''}</td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    ))}
+
+                    <h3 className="font-bold text-slate-800 mb-2 text-sm">アクションプラン</h3>
+                    <table className="w-full text-xs border-collapse mb-6">
+                        <thead><tr className="bg-slate-100"><th className="text-left p-2 border">対応策</th><th className="text-left p-2 border">担当者</th><th className="text-left p-2 border">期限</th><th className="text-left p-2 border">状況</th></tr></thead>
+                        <tbody>
+                            {assessment.actions.length === 0 ? <tr><td colSpan="4" className="p-2 border text-slate-400">なし</td></tr> :
+                                assessment.actions.map(a => <tr key={a.id}><td className="p-2 border">{a.action}</td><td className="p-2 border">{a.owner}</td><td className="p-2 border">{a.due}</td><td className="p-2 border">{a.status}</td></tr>)}
+                        </tbody>
+                    </table>
+
+                    <div className="pt-4 border-t border-slate-200 text-[10px] text-slate-400 leading-relaxed">
+                        <p className="font-semibold text-slate-500 mb-1">参考文献</p>
+                        <p>Damschroder LJ, Reardon CM, Opra Widerquist MA, Lowery J. The updated Consolidated Framework for Implementation Research based on user feedback. Implementation Science. 2022;17:75. doi:10.1186/s13012-022-01245-0</p>
+                        <p>Damschroder LJ, Lowery JC. Evaluation of a large-scale weight management program using the Consolidated Framework for Implementation Research (CFIR). Implementation Science. 2013;8:51. doi:10.1186/1748-5908-8-51</p>
+                        <p>Waltz TJ, Powell BJ, Fernández ME, Abadie B, Damschroder LJ. Choosing implementation strategies to address contextual barriers. Implementation Science. 2019;14:42. doi:10.1186/s13012-019-0892-4</p>
+                    </div>
+                </div>
+            );
+        };
+
+        /* ============ 参考文献モーダル ============ */
+        const RefModal = ({ isOpen, onClose }) => (
+            <Modal isOpen={isOpen} onClose={onClose} title="参考文献・引用元" wide>
+                <div className="space-y-4 text-sm">
+                    <p className="text-slate-600">本アプリのCFIR2.0の領域・構成要素、評価スコア(-2〜+2)、および実装戦略の考え方は、以下の実装科学分野の主要な査読付き論文（Implementation Science誌）に基づいています。</p>
+                    <ul className="space-y-3">
+                        <li className="p-3 bg-slate-50 rounded-lg border border-slate-100">
+                            <p className="font-semibold text-slate-800">CFIR2.0（フレームワーク本体）</p>
+                            <p className="text-slate-600 text-xs mt-1">Damschroder LJ, Reardon CM, Opra Widerquist MA, Lowery J. The updated Consolidated Framework for Implementation Research based on user feedback. <i>Implementation Science</i>. 2022;17:75.</p>
+                            <a className="text-sky-600 text-xs underline" href="https://doi.org/10.1186/s13012-022-01245-0" target="_blank" rel="noopener noreferrer">doi:10.1186/s13012-022-01245-0</a>
+                        </li>
+                        <li className="p-3 bg-slate-50 rounded-lg border border-slate-100">
+                            <p className="font-semibold text-slate-800">評価スコア（-2〜+2の評定ルーブリック）</p>
+                            <p className="text-slate-600 text-xs mt-1">Damschroder LJ, Lowery JC. Evaluation of a large-scale weight management program using the Consolidated Framework for Implementation Research (CFIR). <i>Implementation Science</i>. 2013;8:51.</p>
+                            <a className="text-sky-600 text-xs underline" href="https://doi.org/10.1186/1748-5908-8-51" target="_blank" rel="noopener noreferrer">doi:10.1186/1748-5908-8-51</a>
+                        </li>
+                        <li className="p-3 bg-slate-50 rounded-lg border border-slate-100">
+                            <p className="font-semibold text-slate-800">実装戦略のマッチング（CFIR-ERIC）</p>
+                            <p className="text-slate-600 text-xs mt-1">Waltz TJ, Powell BJ, Fernández ME, Abadie B, Damschroder LJ. Choosing implementation strategies to address contextual barriers: diversity in recommendations and future directions. <i>Implementation Science</i>. 2019;14:42.</p>
+                            <a className="text-sky-600 text-xs underline" href="https://doi.org/10.1186/s13012-019-0892-4" target="_blank" rel="noopener noreferrer">doi:10.1186/s13012-019-0892-4</a>
+                        </li>
+                        <li className="p-3 bg-slate-50 rounded-lg border border-slate-100">
+                            <p className="font-semibold text-slate-800">CFIR初版（背景）</p>
+                            <p className="text-slate-600 text-xs mt-1">Damschroder LJ, Aron DC, Keith RE, Kirsh SR, Alexander JA, Lowery JC. Fostering implementation of health services research findings into practice: a consolidated framework for advancing implementation science. <i>Implementation Science</i>. 2009;4:50.</p>
+                            <a className="text-sky-600 text-xs underline" href="https://doi.org/10.1186/1748-5908-4-50" target="_blank" rel="noopener noreferrer">doi:10.1186/1748-5908-4-50</a>
+                        </li>
+                    </ul>
+                    <p className="text-xs text-amber-700 bg-amber-50 border border-amber-100 rounded-lg p-3">
+                        注: 本セッションのネットワーク制限により、各論文のPDFを自動保存することはできませんでした。上記のDOIリンクから最新の原著論文をご確認ください（Implementation Science誌はBioMed Centralのオープンアクセス誌のため、無料で閲覧・ダウンロードが可能です）。
+                    </p>
+                </div>
+            </Modal>
+        );
+
+        /* ============ App ============ */
+        const App = () => {
+            const [library, setLibrary] = useState({});
+            const [loaded, setLoaded] = useState(false);
+            const [currentId, setCurrentId] = useState(null);
+            const [step, setStep] = useState(1);
+            const [isRefOpen, setIsRefOpen] = useState(false);
+            const fileRef = useRef(null);
+
+            useEffect(() => {
+                try {
+                    const raw = localStorage.getItem(STORAGE_KEY);
+                    if (raw) setLibrary(JSON.parse(raw));
+                } catch (e) { console.error(e); }
+                setLoaded(true);
+            }, []);
+
+            useEffect(() => {
+                if (loaded) localStorage.setItem(STORAGE_KEY, JSON.stringify(library));
+            }, [library, loaded]);
+
+            const current = currentId ? library[currentId] : null;
+
+            const createAssessment = (dept, theme) => {
+                const a = newAssessment(dept, theme);
+                setLibrary(prev => ({ ...prev, [a.id]: a }));
+                setCurrentId(a.id);
+                setStep(1);
+            };
+
+            const deleteAssessment = (id) => {
+                setLibrary(prev => { const next = { ...prev }; delete next[id]; return next; });
+                if (currentId === id) setCurrentId(null);
+            };
+
+            const patchCurrent = (patch) => {
+                setLibrary(prev => ({ ...prev, [currentId]: { ...prev[currentId], ...patch, updatedAt: Date.now() } }));
+            };
+
+            const setRating = (constructId, patch) => {
+                setLibrary(prev => {
+                    const a = prev[currentId];
+                    const existing = a.ratings[constructId] || { score: null, note: '', tags: [] };
+                    return { ...prev, [currentId]: { ...a, updatedAt: Date.now(), ratings: { ...a.ratings, [constructId]: { ...existing, ...patch } } } };
+                });
+            };
+
+            const addAction = (action) => patchCurrent({ actions: [...current.actions, { ...action, id: uid() }] });
+            const updateAction = (id, patch) => patchCurrent({ actions: current.actions.map(a => a.id === id ? { ...a, ...patch } : a) });
+            const deleteAction = (id) => patchCurrent({ actions: current.actions.filter(a => a.id !== id) });
+
+            const handleExportOne = () => {
+                const blob = new Blob([JSON.stringify(current, null, 2)], { type: 'application/json' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url; a.download = `CFIR2_${current.dept}_${current.id}.json`; a.click();
+                URL.revokeObjectURL(url);
+            };
+
+            const handleImport = (e) => {
+                const file = e.target.files[0];
+                if (!file) return;
+                const reader = new FileReader();
+                reader.onload = (ev) => {
+                    try {
+                        const data = JSON.parse(ev.target.result);
+                        const items = data.id ? [data] : Object.values(data);
+                        setLibrary(prev => {
+                            const next = { ...prev };
+                            items.forEach(item => {
+                                if (!item.ratings) return;
+                                const merged = { ...newAssessment(item.dept || '', item.theme || ''), ...item };
+                                next[merged.id] = merged;
+                            });
+                            return next;
+                        });
+                    } catch (err) { console.error('JSON parse error', err); }
+                };
+                reader.readAsText(file);
+                e.target.value = '';
+            };
+
+            const STEP_LABELS = ['1 設定', '2 CFIR2.0評価', '3 分析結果', '4 計画・出力'];
+
+            return (
+                <div className="min-h-screen flex flex-col">
+                    <header className="bg-sky-800 text-white shadow-md sticky top-0 z-40 no-print">
+                        <div className="max-w-6xl mx-auto px-4 py-3 flex justify-between items-center flex-wrap gap-2">
+                            <h1 className="text-xl font-bold flex items-center gap-2">
+                                <IconClipboard className="w-6 h-6 text-sky-200" />
+                                Nudge4Infection <span className="font-normal text-sky-200 hidden md:inline">| CFIR2.0 Framework</span>
+                            </h1>
+                            <div className="flex items-center gap-2 text-sm">
+                                <a href="./index.html" className="flex items-center gap-1 hover:bg-sky-700 px-3 py-1.5 rounded transition-colors" title="EASTナッジ設計ツールへ">
+                                    <IconArrowLeft className="w-4 h-4" /> EASTツール
+                                </a>
+                                <div className="w-px h-5 bg-sky-600 mx-1"></div>
+                                <button onClick={() => setIsRefOpen(true)} className="flex items-center gap-1 hover:bg-sky-700 px-3 py-1.5 rounded transition-colors">
+                                    <IconInfo className="w-4 h-4" /> 参考文献
+                                </button>
+                                {current && (
+                                    <>
+                                        <div className="w-px h-5 bg-sky-600 mx-1"></div>
+                                        <button onClick={() => setCurrentId(null)} className="flex items-center gap-1 hover:bg-sky-700 px-3 py-1.5 rounded transition-colors">
+                                            <IconUsers className="w-4 h-4" /> 一覧へ
+                                        </button>
+                                        <button onClick={handleExportOne} className="flex items-center gap-1 hover:bg-sky-700 px-3 py-1.5 rounded transition-colors" title="この分析を保存">
+                                            <IconSave className="w-4 h-4" /> 保存
+                                        </button>
+                                        <button onClick={() => window.print()} className="flex items-center gap-1 hover:bg-sky-700 px-3 py-1.5 rounded transition-colors" title="印刷">
+                                            <IconPrinter className="w-4 h-4" /> 印刷
+                                        </button>
+                                    </>
+                                )}
+                                <button onClick={() => fileRef.current.click()} className="flex items-center gap-1 hover:bg-sky-700 px-3 py-1.5 rounded transition-colors" title="JSON読込">
+                                    <IconUpload className="w-4 h-4" /> 読込
+                                </button>
+                                <input type="file" ref={fileRef} className="hidden" accept=".json" onChange={handleImport} />
+                            </div>
+                        </div>
+                    </header>
+
+                    {current && (
+                        <div className="bg-white border-b border-slate-200 shadow-sm no-print">
+                            <div className="max-w-4xl mx-auto px-4 py-3 flex justify-between items-center text-sm font-medium overflow-x-auto">
+                                {[1, 2, 3, 4].map(s => (
+                                    <React.Fragment key={s}>
+                                        <button onClick={() => setStep(s)}
+                                            className={`flex items-center gap-2 transition-colors whitespace-nowrap ${step === s ? 'text-sky-700 font-bold' : 'text-slate-500 hover:text-sky-600'}`}>
+                                            <span className={`w-6 h-6 flex items-center justify-center rounded-full text-xs ${step === s ? 'bg-sky-700 text-white' : step > s ? 'bg-slate-200 text-slate-700' : 'bg-slate-100 text-slate-400'}`}>
+                                                {step > s ? <IconCheck className="w-3 h-3" /> : s}
+                                            </span>
+                                            <span className="hidden sm:inline">{STEP_LABELS[s - 1]}</span>
+                                        </button>
+                                        {s < 4 && <IconArrowRight className="text-slate-300 w-4 h-4" />}
+                                    </React.Fragment>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+
+                    <main className="flex-1 max-w-6xl mx-auto w-full p-4 sm:p-6 overflow-x-hidden">
+                        {!current ? (
+                            <LibraryView assessments={library} onOpen={(id) => { setCurrentId(id); setStep(1); }} onCreate={createAssessment} onDelete={deleteAssessment} onImport={handleImport} />
+                        ) : (
+                            <>
+                                {step === 1 && <SetupStep assessment={current} update={patchCurrent} />}
+                                {step === 2 && <AssessStep assessment={current} setRating={setRating} />}
+                                {step === 3 && <ResultStep assessment={current} />}
+                                {step === 4 && <ActionStep assessment={current} addAction={addAction} updateAction={updateAction} deleteAction={deleteAction} />}
+                                <div className="max-w-5xl mx-auto flex justify-between mt-6 no-print">
+                                    <button onClick={() => setStep(Math.max(1, step - 1))} disabled={step === 1}
+                                        className="flex items-center gap-2 px-5 py-2.5 border border-slate-300 text-slate-700 rounded-xl hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
+                                        <IconArrowLeft className="w-4 h-4" /> 戻る
+                                    </button>
+                                    <button onClick={() => setStep(Math.min(4, step + 1))} disabled={step === 4}
+                                        className="flex items-center gap-2 px-5 py-2.5 bg-sky-700 text-white rounded-xl font-bold hover:bg-sky-800 disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
+                                        次へ <IconArrowRight className="w-4 h-4" />
+                                    </button>
+                                </div>
+                            </>
+                        )}
+                    </main>
+
+                    <RefModal isOpen={isRefOpen} onClose={() => setIsRefOpen(false)} />
+                </div>
+            );
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
